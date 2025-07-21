@@ -4,9 +4,9 @@ Date: 19-05-2025
 
 BinaryModel.py:
     This object stores the geometric parameters and lightcurve data, and calculates the predicted flux, modulation and beam widths if required, and scaling coefficient. Running python BunaryModel.py opens an interactive dynamic pulse profile. The geometric parameters are named by a different convention from what is published.
-    --------------------------------------------------------------------
+    ---
     published name      code name       description
-    --------------------------------------------------------------------
+    ---
     i                   theta           orbital inclination
     alpha               phi             magnetic obliquity
     phi                 beta            angular spin phase
@@ -17,7 +17,7 @@ BinaryModel.py:
     W_orb               w_mod           angular modulation width
     phi^(0)             beta_0          initial angular spin phase
     phi_orb^(0)         alpha_0         initial angular orbital phase
-    --------------------------------------------------------------------
+    ---
     
 BinaryModelMCMC.py:
     This runs the MCMC fit of the model to the data. Much of it is hard-coded, sorry.
