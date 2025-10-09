@@ -5,6 +5,9 @@ from BinaryModel import BinaryModel, GaussianBeam, StepBeam, CosineBeam
 from BinaryModel import Fold
 from BinaryModelMCMC import BinaryModelMCMC, MinMaxWidths
 
+### Do the MCMC fit for J1912 using BinaryModelMCMC.
+
+# Ephemeris
 p_orbit = 0.1681198936*24*60*60     # Orbit period in seconds
 p_pulse = 319.34903   # Pulse period in seconds
 t0_orbit = 0.45*p_orbit  # GPS time of reference orbit 
@@ -12,6 +15,8 @@ t0_pulse = 0.45*p_pulse  # GPS time of reference pulse
 
 # p_pulse = p_orbit / (p_orbit/p_pulse + 1)
 # t0_pulse -= p_pulse * 0.56
+
+# Initial parameters
 
 # x0 = np.array([0.0, 0.0, 0.0,  0.8, 0.0, 1.0])
 # x0 = np.array([0.0, 0.0, 0.0,  0.8, 0.0, 1.5])
@@ -25,9 +30,11 @@ t0_pulse = 0.45*p_pulse  # GPS time of reference pulse
 x0 = [-1.76044263, -0.67962464,  1.04219588,  0.99072053, -0.54927727,  0.98048662]
 # x0 = [-2.34912292, -1.49327929,  0.56160501, -1.40884418, 0.62574176]
 
+# Reading data
 with open('pol_results_j1912-44.pkl', 'rb')as f:
     data = pkl.load(f)
 
+# Cleaning up data
 time = np.concatenate([x.time_bc for x in data])
 flux = np.concatenate([x.curves['I'] for x in data])
 sigma = np.concatenate([x.unc_t['I'] for x in data])
@@ -48,6 +55,7 @@ total_time = np.sum(unique_counts[unique_times <= 2] * unique_times[unique_times
 print(total_time / 60 / 60)
 exit()
 
+# Build binary model
 model = BinaryModel(fit_coeff=True, fit_wbeam=True, fit_wmod=True)
 model.SetTiming(t0_pulse, p_pulse, t0_orbit, p_orbit)
 model.SetData(time, flux, is_pulse, sigma)
@@ -58,6 +66,7 @@ model.SetPriors(theta=((59-6)*np.pi/180, (59+6)*np.pi/180))
 # model.SetParameters(theta=59*np.pi/180)
 model.SetFitParameters(x0)
 
+# Plot model prediction and print parameters
 # model.FlipX()
 # model.FlipZ()
 model.Plot(fscale=400)
@@ -72,9 +81,11 @@ print('wmod', 180/np.pi * model.wmod)
 print('coeff', model.coeff)
 plt.show()
 
+# Parameter ranges - these were copied from a previous run of this same code because the MCMC is done at the end
 lower = np.array([-2.16969104, -0.9720775,   0.89549305,  0.7376763,  -0.8455281,   0.6832874 ])
 upper = np.array([-1.36590774, -0.44740877,  1.17792421,  1.22879775, -0.29324626,  1.2688053 ])
 
+# Calculate beam/modulation width uncertainties
 wbeam_range, wmod_range = MinMaxWidths(model, lower, upper)
 
 print(lower * 180 / np.pi)
@@ -82,10 +93,14 @@ print(upper * 180 / np.pi)
 print(180/np.pi * wbeam_range, 180/np.pi * wmod_range)
 # exit()
 
+# Do the fit
+
 # mcmc = BinaryModelMCMC(model)
 mcmc = BinaryModelMCMC(model, 32, 1000)
 # mcmc = BinaryModelMCMC(model, 64, 5000)
 mcmc.GetSamples()
+
+# Plot the fit
 
 dname = 'mcmc_results_j1912-44'
 code = 'o1s0_bgs_mga_limited'

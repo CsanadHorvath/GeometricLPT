@@ -8,6 +8,7 @@ from spiceypy.spiceypy import spkezr, furnsh, j2000, spd, unload
 
 def bc_corr(coord, time, ephemeris_file='de430.bsp'):
     '''
+    Calculate the barycentric correction
     coord - SkyCoord object (from astropy) representing the location of the source
     time - Time object (from astropy)
     ephemeris_file - 

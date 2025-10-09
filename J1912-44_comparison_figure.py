@@ -5,6 +5,8 @@ from BinaryModel import BinaryModel, GaussianBeam
 from BinaryModel import Fold
 from BinaryModelMCMC import MinMaxWidths
 
+# Creates the J1912 plot in an overly complicated way
+
 p_orbit = 0.1681198936*24*60*60     # Orbit period in seconds
 p_pulse = 319.34903   # Pulse period in seconds
 t0_orbit = 0.45*p_orbit  # GPS time of reference orbit 

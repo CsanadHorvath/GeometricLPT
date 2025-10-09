@@ -2,45 +2,27 @@ import numpy as np
 from matplotlib.axes import Axes
 import matplotlib.pyplot as plt
 
-def any_none(*args):
-    return any([x is None for x in args])
-
-def all_none(*args):
-    return all([x is None for x in args])
-
 def WrapValues(value, min_range, max_range):
+    '''Wrap values into given range e.g. 0 to 360 degrees'''
     range_size = max_range - min_range
     wrapped_value = (value - min_range) % range_size + min_range
     return wrapped_value
 
 def Fold(t, t0, period):
-    '''Returns: period number, period residual'''
+    '''
+    Fold times on a given period
+    Returns: period number, period residual'''
     p_num = np.round((t - t0) / period)
     residual = t - t0 - p_num * period
     return p_num, residual
 
 def Dot(a, b):
+    '''Dot product wrapper keeping original dimentions'''
     return np.sum(a*b, axis=-1, keepdims=True)
 
 def Mag(vec):
+    '''Cartesian magnitude of vector'''
     return np.sqrt(Dot(vec, vec))
-
-def Argh(alpha, beta, theta, phi, sigma, psi):
-    shape = alpha.shape
-    alpha = alpha.reshape(-1)
-    beta = beta.reshape(-1)
-    mu = np.array([np.cos(beta)*np.sin(phi), np.sin(beta)*np.sin(phi), np.cos(phi)*np.ones_like(alpha)]).T
-    r_MD = np.array([np.cos(theta)*np.cos(alpha), np.sin(alpha), -np.sin(theta)*np.cos(alpha)]).T
-    r_LOS = np.array([np.sin(psi)*np.cos(sigma), np.sin(psi)*np.sin(sigma), np.cos(psi)])
-    omega = 25
-    omega_WD = np.array([0, 0, omega])
-    omega_MD = np.array([np.sin(theta), np.zeros_like(theta), np.cos(theta)])
-    B = 3*r_MD*Dot(mu, r_MD) - mu
-    v = np.cross(omega_WD - omega_MD, r_MD)
-    E = np.cross(v, B)
-    E_mag = np.sqrt(Dot(E, E))
-    print(np.max(Dot(E/E_mag, r_LOS)))
-    return np.arccos(Dot(E/E_mag, r_LOS)).reshape(shape), 1#E_mag.reshape(shape)
 
 
 def rotation_matrix(axis, angle):
@@ -63,6 +45,10 @@ def rotate_vector(vector, axis, angle):
 
 
 def GaussianBeam(angle, width, symetric=None):
+    '''Gaussian function of angle from LOS with std = width/5.
+    This is the shape of the beam, with width being a proxy for the opening angle.
+    The symetric parameter determines whether both poles emit (True), only one (False), or one with negative intensity (False, useful for debug).
+    Returns observed amplitude.'''
     width = width / 5
     angle = np.abs(WrapValues(angle, -np.pi, np.pi))
     amp = np.exp(-angle**2 / (2*width**2))
@@ -75,6 +61,8 @@ def GaussianBeam(angle, width, symetric=None):
     return amp
 
 def CosineBeam(angle, width, symetric=None):
+    '''Cosine beam shape with hard cutoff at angle=width. Similar to GaussianBeam.
+    Returns observed amplitude.'''
     angle = np.abs(WrapValues(angle, -np.pi, np.pi))
     amp = np.cos(np.pi * angle / width / 2)**2
     amp[angle > width] = 0
@@ -88,10 +76,14 @@ def CosineBeam(angle, width, symetric=None):
     return amp
 
 def WavyBeam(angle, width, symetric=None):
+    '''A beam with concentric waves.
+    Returns observed amplitude.'''
     wave = np.cos(20 * angle)**2
     return GaussianBeam(angle, width, symetric) * wave
 
 def StepBeam(angle, width, symetric=None):
+    '''Simple step function beam with cutoff at angle=width
+    Returns observed amplitude.'''
     angle = np.abs(WrapValues(angle, -np.pi, np.pi))
     amp = np.ones_like(angle)
     amp[angle > width] = 0
@@ -106,27 +98,31 @@ def StepBeam(angle, width, symetric=None):
 
 class BinaryModel():
     def __init__(self, fit_coeff=True, fit_wbeam=True, fit_wmod=True, mode=0):
-        self.mode          = mode
-        self.fit_coeff     = fit_coeff
-        self.fit_wbeam     = fit_wbeam
-        self.fit_wmod      = fit_wmod
-        self.has_data      = False
-        self.has_timing    = False
-        self.has_geometry  = False
-        self.has_alphabeta = False
-        self.use_priors    = True
-        self.pnum          = 10
-        self.pmask         = np.ones(self.pnum, dtype=bool)
+        self.fit_coeff     = fit_coeff  # Fit the coefficient based on th elightcurve?
+        self.fit_wbeam     = fit_wbeam  # Wit the beam width based on the lightcurve?
+        self.fit_wmod      = fit_wmod   # Fit the orbital modulation width base dont he light curve?
+        self.has_data      = False      # Object has lightcurve data?
+        self.has_timing    = False      # Object has timing data?
+        self.has_geometry  = False      # Object has geometry data?
+        self.has_alphabeta = False      # Object has LOS and MD angles calculated?
+        self.use_priors    = True       # Constrain the MCMC paramater ranges?
+        self.pnum          = 10         # Number of paramaters
+        self.pmask         = np.ones(self.pnum, dtype=bool) # Mask of the parameters to be fit
         self.pmask[6]      = not self.fit_coeff
         self.pmask[7]      = not self.fit_wbeam
         self.pmask[8]      = not self.fit_wmod
         self.pmask[9]      = False
+        # Text name of the parameters
         self.ptext = np.array([   'alpha_0' ,    'beta_0' ,    'theta' ,    'phi' ,    'sigma' ,    'psi' , 'coeff', 'wbeam',  'wmod', 'r_em'])
+        # Maths name of the parameters (this became inconsistent with the names in the code)
         self.pmath = np.array(['$\\phi_\\text{orb}^{(0)}$', '$\\phi^{(0)}$', '$i$', '$\\alpha$', '$\\phi_0$', '$\\zeta$', '$A$'  , '$W_\\text{spin}$',  '$W_\\text{orb}$', '$r_{{em}}$'])
+        # Parameter prior ranges
         self.pmin  = np.array([       -np.pi,       -np.pi,      -np.pi,       0.0,      -np.pi,       0.0,    0.01,    0.01,    0.01, 0])
         self.pmax  = np.array([        np.pi,        np.pi,       np.pi,     np.pi,       np.pi,     np.pi,  np.inf, 4*np.pi, 4*np.pi, 1])
+        # Dictionary of parameter index
         self.pidx  = {self.ptext[idx]:idx for idx in range(len(self.ptext))}
 
+        # Ranges for plotting purposes
         self.alpha_min = None
         self.alpha_max = None
         self.alpha_num = None
@@ -134,6 +130,7 @@ class BinaryModel():
         self.beta_max  = None
         self.beta_num  = None
 
+        # Geometric parameters
         self.alpha_0   = None
         self.beta_0    = None
         self.theta     = None
@@ -145,37 +142,44 @@ class BinaryModel():
         self.wmod      = None
         self.r_em      = 0.1
 
-        self.lighthouse_mode = 'mono'
-        self.beam_dir = 'pole'
-        self.south = 1
+        self.lighthouse_mode = 'mono'   # 'binary': poth poles radiate, 'mono': one pole radiates, 'isotropic': non-beamed emission
+        self.beam_dir = 'pole'          # switches between beam direction modes. 'pole' is the only useful one, the rest were for testing.
+        self.south = 1                  # a coefficient for the south pole emission (if any)
 
         self.SetBeamFunc(GaussianBeam, symetric=True)
         self.SetModFunc(GaussianBeam, symetric=None)
 
     def SetPriors(self, **kwargs):
+        '''Set the prior parameter ranges e.g. SetPriors('theta', [0, np.pi])'''
         for key in kwargs:
             idx = self.pidx[key]
             self.pmin[idx] = kwargs[key][0]
             self.pmax[idx] = kwargs[key][1]
 
     def SetWhatToFit(self, **kwargs):
+        '''Set which parameters to fit e.g. SetPriors('theta', True)'''
         for key in kwargs:
             idx = self.pidx[key]
             self.pmask[idx] = kwargs[key]
 
     def FlipX(self):
+        '''Flip the model along X axis'''
         self.alpha_0 = WrapValues(self.alpha_0 - np.pi, -np.pi, np.pi)
         self.beta_0  = WrapValues(self.beta_0  - np.pi, -np.pi, np.pi)
         self.sigma   = WrapValues(self.sigma   - np.pi, -np.pi, np.pi)
         self.theta = -self.theta
 
     def FlipZ(self):
+        '''Flip the model along Z axis'''
         self.alpha_0 = WrapValues(self.alpha_0 - np.pi, -np.pi, np.pi)
         self.beta_0  = WrapValues(self.beta_0  - np.pi, -np.pi, np.pi)
         self.psi = -self.psi
         self.theta = -self.theta
 
     def SetBeamFunc(self, beam_func, *args, **kwargs):
+        '''Set the beam function.
+            beam_func: funtion that takes angle from magnetic moment, either function pointer or string.
+            args and kwargs: args to pass to beam_func'''
         if type(beam_func) is str:
             beam_func = {'step':StepBeam, 'gaussian':GaussianBeam, 'step':StepBeam, 'wavy':WavyBeam}[beam_func]
         self.beam_func = beam_func
@@ -183,6 +187,9 @@ class BinaryModel():
         self.beam_kwargs = kwargs
 
     def SetModFunc(self, mod_func, *args, **kwargs):
+        '''Set the orbital modulation function.
+            mod_func: funtion that takes angle from magnetic moment, either function pointer or string.
+            args and kwargs: args to pass to mod_func'''
         if type(mod_func) is str:
             mod_func = {'step':StepBeam, 'gaussian':GaussianBeam, 'step':StepBeam, 'wavy':WavyBeam}[mod_func]
         self.mod_func = mod_func
@@ -190,18 +197,22 @@ class BinaryModel():
         self.mod_kwargs = kwargs
 
     def SetLighthouseMode(self, lighthouse_mode):
+        '''Set the lighthouse mode: "binary", "mono", "isotropic"'''
         self.lighthouse_mode = lighthouse_mode
 
     def SetSouthPole(self, south):
+        '''Set coefficient for south pole emission'''
         if type(south) is str:
             self.south = {'yes':1, 'no':0, 'inv':-1}[south]
         else:
             self.south = south
 
     def SetBeamDir(self, beam_dir):
+        '''Set beam direction'''
         self.beam_dir = beam_dir
 
     def SetMode(self, beam_shape=None, mod_shape=None, south_pole=None, lighthouse=None, beam_dir=None):
+        '''Convenience function to set multiple things in the same call.'''
         if beam_shape is not None:
             self.SetBeamFunc(beam_shape)
         if mod_shape is not None:
@@ -214,14 +225,14 @@ class BinaryModel():
             self.SetBeamDir(beam_dir)
 
     def Nu(self, alpha=None, beta=None):
-        '''Angle between beam and M-dwarf'''
+        '''Calculate angle between beam and M-dwarf'''
         return np.arccos(
             np.cos(beta) * np.sin(self.phi) * np.cos(self.theta) * np.cos(alpha) +
             np.sin(beta) * np.sin(self.phi) * np.sin(alpha) -
             np.cos(self.phi) * np.sin(self.theta) * np.cos(alpha))
 
     def Mu(self, alpha=None, beta=None):
-        '''Angle between Earth and beam'''
+        '''Calculate angle between Earth and beam'''
         match self.beam_dir:
             case 'pole': return np.arccos(
                 np.sin(self.psi) * np.sin(self.phi) * np.cos(self.sigma - beta) +
@@ -247,6 +258,9 @@ class BinaryModel():
                 return np.arccos(Dot(E/E_mag, r_LOS)).reshape(shape)
 
     def Beam(self, mu=None, width=None, alpha=None, beta=None):
+        '''Return the beam amplitude.
+        Without arguments, it is calculated for each timestep in the data.
+        With arguments, it is calculate for the mu value, or the alpha,beta value.'''
         if mu is None:
             if alpha is None:
                 alpha = self.alpha
@@ -264,12 +278,11 @@ class BinaryModel():
                     self.wbeam = self.pmin[self.pidx['wbeam']]
             width = self.wbeam
         return self.beam_func(mu, width, *self.beam_args, **self.beam_kwargs)
-        # angle, mag = AngEBMD(alpha, beta, self.theta, self.phi, self.sigma,self.psi)
-        # angle, mag = Argh(alpha, beta, self.theta, self.phi, self.sigma,self.psi)
-        # angle, mag, _ = BRUH(alpha, beta, self.theta, self.phi, self.sigma,self.psi, self.r_em)
-        return self.beam_func(angle, width, *self.beam_args, **self.beam_kwargs) * mag
     
     def Mod(self, nu=None, width=None):
+        '''Return the modulation amplitude.
+        Without arguments, it is calculated for each timestep in the data.
+        With arguments, it is calculate for the nu value.'''
         if nu is None:
             self.nu = self.Nu(self.alpha, self.beta)
             nu = self.nu
@@ -293,6 +306,7 @@ class BinaryModel():
         return self.mod_func(nu, width, *self.mod_args, **self.mod_kwargs)
     
     def SetData(self, time, flux, is_pulse=None, unc=None):
+        '''Set the timeseries data. is_pulse is a mask for timesteps containing a pulse. unc is the flux uncertainty.'''
         self.time = time
         self.flux = flux
         if is_pulse is None:
@@ -309,6 +323,7 @@ class BinaryModel():
         return self.time, self.flux, self.is_pulse
 
     def SetTiming(self, t0_spin, p_spin, t0_orbit, p_orbit):
+        '''Set the timing ephemeris for spin and orbit'''
         self.t0_spin    = t0_spin
         self.p_spin     = p_spin
         self.t0_orbit   = t0_orbit
@@ -319,6 +334,7 @@ class BinaryModel():
         return self.t0_spin, self.p_spin, self.t0_orbit, self.p_orbit
         
     def SetParameters(self, alpha_0=None, beta_0=None, theta=None, phi=None, sigma=None, psi=None, coeff=None, wbeam=None, wmod=None, r_em=None):
+        '''Convenience function to set many parameters'''
         if alpha_0 is not None: self.alpha_0      = alpha_0
         if beta_0  is not None: self.beta_0       = beta_0
         if theta   is not None: self.theta        = theta
@@ -335,6 +351,7 @@ class BinaryModel():
         return self.alpha_0, self.beta_0, self.theta, self.phi, self.sigma, self.psi, self.coeff, self.wbeam, self.wmod, self.r_em
     
     def SetFitParameters(self, arr):
+        '''Set the parameters to be fit with an array. This should include only parameters which are true in the fit mask.'''
         params = np.full(self.pnum, None, dtype=object)
         params[self.pmask] = arr
         self.SetParameters(*params)
@@ -343,6 +360,7 @@ class BinaryModel():
         return np.array(self.GetParameters(), dtype=float)[self.pmask]
     
     def SetAlphaBeta(self, alpha, beta, is_pulse=None):
+        '''Set the alpha and beta arrrays for which the flux is predicted.'''
         self.alpha = alpha
         self.beta = beta
         if is_pulse is None:
@@ -366,6 +384,7 @@ class BinaryModel():
             return None, None
     
     def FoldData(self):
+        '''Fold the data on the stored orbit and spin ephemeris'''
         if self.has_data and self.has_timing:
             self.orbit_num, self.orbit_res = Fold(self.time, self.t0_orbit, self.p_orbit)
             self.spin_num , self.spin_res  = Fold(self.time, self.t0_spin , self.p_spin )
@@ -373,6 +392,7 @@ class BinaryModel():
             self.spin_phase  = self.spin_res  / self.p_spin
 
     def Func(self, alpha, beta):
+        '''Function to predict the amplitude (without the flux coefficient)'''
         mu = self.Mu(alpha, beta)
         nu = self.Nu(alpha, beta)
         match self.lighthouse_mode:
@@ -383,6 +403,7 @@ class BinaryModel():
         return pred
 
     def Predict(self, alpha=None, beta=None):
+        '''Predict the aplitude. Without arguments, calculated for the stored alpha, beta.'''
         if self.has_alphabeta:
             self.GetAlphaBeta()
         if alpha is None:
@@ -402,6 +423,7 @@ class BinaryModel():
         return self.pred
 
     def LogPosterior(self, params=None, use_priors=None):
+        '''Natural log of the posterior probability that the model matches the data'''
         if params is not None:
             self.SetFitParameters(params)
         if use_priors is None:
@@ -448,6 +470,7 @@ class BinaryModel():
         return self.chi2, self.chi2red
     
     def SetSampleGrid(self, alpha_min=None, alpha_max=None, alpha_num=None, beta_min=None, beta_max=None, beta_num=None):
+        '''Set the alpha, beta grid to sample the model at for plotting'''
         if alpha_min is not None: self.alpha_min = alpha_min
         if alpha_max is not None: self.alpha_max = alpha_max
         if alpha_num is not None: self.alpha_num = alpha_num
@@ -474,6 +497,7 @@ class BinaryModel():
         self.beta_grid, self.alpha_grid = np.meshgrid(self.beta_sample, self.alpha_sample)
     
     def PlotAngles(self, ax:Axes, xscale=1, yscale=1, mumin=None, mumax=None):
+        '''Plots the LOS and MD angles on a colormap and contour map.'''
         self.SetSampleGrid()
         mu = self.Mu(self.alpha_grid, self.beta_grid) * 180 / np.pi
         nu = self.Nu(self.alpha_grid, self.beta_grid) * 180 / np.pi
@@ -488,6 +512,7 @@ class BinaryModel():
         return pcol, cont
 
     def PlotPrediction(self, ax:Axes, xscale=1, yscale=1, vmin=None, vmax=None):
+        '''Plots the prediction on a spin-orbit phase diagram.'''
         self.SetSampleGrid()
         pred = self.Predict(alpha=self.alpha_grid, beta=self.beta_grid) * 1e3
 
@@ -507,6 +532,7 @@ class BinaryModel():
         return pcol
             
     def PlotData(self, ax:Axes, xscale=1, yscale=1, fscale=1, flatten=False):
+        '''Plots the data on a spin-orbit phase diagram'''
         self.GetAlphaBeta()
         x = self.beta * xscale
         y = self.alpha * yscale
@@ -527,6 +553,7 @@ class BinaryModel():
                     # ax.plot(x[sel], f[sel] + y[sel], 'r.', zorder=z+0.0001, lw=0.5)
 
     def Plot(self, fname=None, fig=None, axs=None, fscale=1, scale = 180 / np.pi):
+        '''Plot everything'''
         if axs is None:
             fig, axs = plt.subplots(1, 2, figsize=(13, 5), width_ratios=[8,10], sharex=True, sharey=True)
         pcol0 = self.PlotPrediction(axs[0], xscale=scale, yscale=scale)
@@ -553,11 +580,13 @@ class BinaryModel():
             plt.savefig(fname)
         return fig, axs
 
+# When run as main, opens an interactive window with sliders for the parameters
 if __name__=='__main__':
     from matplotlib.widgets import Slider, Button
     import pickle as pkl
     from DynspecGroup import DynspecGroup
 
+    # Setup variables to initialise the interactive mode
     show_data = False
     lighthouse = 0
     beam_dir = 0

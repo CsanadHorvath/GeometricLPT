@@ -24,9 +24,9 @@ BinaryModelMCMC.py:
 
 DynspecGroup.py:
     Handles reading of the dynamic spectra, performs calculations like dedispersion, Farraday rotation, and barrycentric correction, and generates lightcurves stored in pickle files.
-    
-plot_pulse_stack.py:
-    Plots the colourful dynamic pulse profile for GPM J1839-10 with PA.
 
 orbital_physics.py:
     Does calculations like orbital separation, corrotation radius, etc, and plots them on a cool diagram.
+
+Edot.py:
+    Does model Edot calculations.

@@ -8,17 +8,22 @@ from DynspecGroup import DynspecGroup
 
 class BinaryModelMCMC():
     def __init__(self, model:bm.BinaryModel, nwalkers=32, nsteps=500):
+        # Set up an mcmc sampler for the model (an instance of BinaryModel)
         print(nwalkers, nsteps)
         self.model = model
         self.nwalkers = nwalkers
         self.nsteps = nsteps
+        # The initial guess is the parameters stored in the model already.
+        # The number of parameters is inferred from the parameters that the model has set to actually fit with the fit mask.
         self.pguess = model.GetFitParameters()
         self.ndim = self.pguess.size
         self.sampler = emcee.EnsembleSampler(self.nwalkers, self.ndim, self.model.LogPosterior, args={'use_priors':True}, a=10)
+        # The initial positions are the initial parameters with small offsets
         self.initial_positions = [self.pguess + 1e-4 * np.random.randn(self.ndim) for _ in range(self.nwalkers)]
         self.sampler.run_mcmc(self.initial_positions, nsteps, progress=True)
 
     def GetSamples(self):
+        '''Sample samples and calculate median paramteres and 1 sigma ranges'''
         self.samples = self.sampler.get_chain(discard=100, thin=15, flat=True)
         # Assuming 'sampler' is your emcee sampler and 'samples' is the array of MCMC samples
         self.log_prob_samples = self.sampler.get_log_prob(discard=100, thin=15, flat=True)
@@ -32,6 +37,7 @@ class BinaryModelMCMC():
         return self.samples
 
     def Print(self, fname=None):
+        '''Print results'''
         if fname is None:
             args = {}
         else:
@@ -48,6 +54,7 @@ class BinaryModelMCMC():
             args['file'].close
 
     def Plot(self, fname=None):
+        '''Make the corner plot'''
         labels = self.model.pmath[self.model.pmask]
         fig = plt.figure(figsize=(15,15))
         corner.corner(self.samples, labels=labels, fig=fig)
@@ -57,6 +64,7 @@ class BinaryModelMCMC():
             plt.savefig(fname)
 
 def generate_combinations(list1, list2):
+    '''Generate combinations for trying min and max uncertainty ranges'''
     if len(list1) != len(list2):
         raise ValueError("The input lists must have the same length.")
     
@@ -78,6 +86,8 @@ def generate_combinations(list1, list2):
 
 
 def MinMaxWidths(model:bm.BinaryModel, pmin, pmax):
+    '''Runs the model with min and max parameter ranges, fits the beam and modulation widths for each, and finds the min and max widths.
+    This is to find reasonable uncertainties for those values.'''
     param_combs = generate_combinations(pmin, pmax)
     wbeam_list = []
     wmod_list = []
