@@ -30,3 +30,5 @@ orbital_physics.py:
 
 Edot.py:
     Does model Edot calculations.
+
+Relies on https://github.com/GLEAM-X/dynspec_tools/tree/main/src/dynspec_tools
